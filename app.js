@@ -15,6 +15,7 @@ const app = {
         currentUser: JSON.parse(localStorage.getItem('currentUser')) || null,
         activeView: 'dashboard',
         selectedPlanId: null,
+        viewingPlanId: null,
         editingUserId: null
     },
 
@@ -305,7 +306,6 @@ const app = {
         this.state.editingUserId = userId;
         document.getElementById('edit-password-user-label').textContent = `Account: ${user.name} (@${user.username})`;
         document.getElementById('edit-password-value').value = user.password || '';
-        this.resetPasswordToggle('edit-password-value');
         this.openModal('form-edit-password');
     },
 
@@ -353,39 +353,106 @@ const app = {
     },
 
     renderPlans(isAdmin) {
-        const activeList = document.getElementById('active-plans-list');
         const approvedList = document.getElementById('approved-plans-list');
-        const approvedSection = document.getElementById('approved-plans-section');
-        if (!activeList || !approvedList) return;
+        const pendingList = document.getElementById('pending-plans-list');
+        const rejectedList = document.getElementById('rejected-plans-list');
+        if (!approvedList || !pendingList || !rejectedList) return;
 
         const filtered = isAdmin
             ? this.state.plans
             : this.state.plans.filter(p => Number(p.requesterId) === Number(this.state.currentUser.id));
 
         const sortNewest = (a, b) => b.id - a.id;
-        const activePlans = filtered.filter(p => p.status !== 'approved').sort(sortNewest);
-        const approvedPlans = filtered.filter(p => p.status === 'approved').sort(sortNewest);
+        const byStatus = status => filtered.filter(p => (p.status || 'pending') === status).sort(sortNewest);
 
-        activeList.innerHTML = activePlans.length
-            ? activePlans.map(p => this.templatePlan(p)).join('')
-            : '<p class="empty-state">No active plans.</p>';
+        const renderSection = (list, plans, emptyMsg) => {
+            list.innerHTML = plans.length
+                ? plans.map(p => this.templatePlan(p)).join('')
+                : `<p class="empty-state">${emptyMsg}</p>`;
+        };
 
-        if (approvedPlans.length) {
-            approvedSection.style.display = 'block';
-            approvedList.innerHTML = approvedPlans.map(p => this.templatePlan(p)).join('');
-        } else {
-            approvedSection.style.display = 'none';
-            approvedList.innerHTML = '';
-        }
+        renderSection(approvedList, byStatus('approved'), 'No approved plans.');
+        renderSection(pendingList, byStatus('pending'), 'No pending plans.');
+        renderSection(rejectedList, byStatus('rejected'), 'No rejected plans.');
     },
 
     getPlanReviews(plan) {
         return plan.reviews || [];
     },
 
+    escapeHtml(text) {
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    },
+
+    formatPlanPrintHtml(plan) {
+        const reviews = this.getPlanReviews(plan);
+        const cost = Number(plan.cost) || 0;
+        const status = (plan.status || 'pending').toUpperCase();
+        const reviewsTable = reviews.length
+            ? `<table>
+                <thead><tr><th>Reviewer</th><th>Action</th><th>Remarks</th><th>Date</th></tr></thead>
+                <tbody>${reviews.map(r => `
+                    <tr>
+                        <td>${this.escapeHtml(r.adminName)}</td>
+                        <td>${this.escapeHtml(r.status)}</td>
+                        <td>${this.escapeHtml(r.remarks)}</td>
+                        <td>${this.escapeHtml(r.timestamp || '')}</td>
+                    </tr>
+                `).join('')}</tbody>
+               </table>`
+            : '<p>No reviews recorded.</p>';
+
+        return `
+            <div class="print-page">
+                <div class="print-header">
+                    <h1>Plan Application Record</h1>
+                    <p>Plan Approval System — Official Document</p>
+                </div>
+                <dl class="print-meta">
+                    <div><dt>Plan Title</dt><dd>${this.escapeHtml(plan.title || 'Untitled Plan')}</dd></div>
+                    <div><dt>Reference ID</dt><dd>${plan.id}</dd></div>
+                    <div><dt>Requester</dt><dd>${this.escapeHtml(plan.requesterName || 'Unknown')}</dd></div>
+                    <div><dt>Submitted</dt><dd>${this.escapeHtml(plan.timestamp || 'N/A')}</dd></div>
+                    <div><dt>Budget (PKR)</dt><dd>${cost.toLocaleString()}</dd></div>
+                    <div><dt>Status</dt><dd><span class="print-status">${status}</span></dd></div>
+                </dl>
+                <div class="print-section">
+                    <h2>Description / Justification</h2>
+                    <p>${this.escapeHtml(plan.description || 'No description provided.')}</p>
+                </div>
+                <div class="print-section print-reviews">
+                    <h2>Review History</h2>
+                    ${reviewsTable}
+                </div>
+                <div class="print-footer">
+                    Printed on ${new Date().toLocaleString()} — A4 Format
+                </div>
+            </div>
+        `;
+    },
+
+    printPlan() {
+        const plan = this.state.plans.find(p => p.id === this.state.viewingPlanId);
+        if (!plan) return;
+
+        const sheet = document.getElementById('plan-print-sheet');
+        if (!sheet) return;
+
+        sheet.innerHTML = this.formatPlanPrintHtml(plan);
+        sheet.setAttribute('aria-hidden', 'false');
+        window.print();
+        sheet.setAttribute('aria-hidden', 'true');
+    },
+
     formatPlanDetailsHtml(plan, { showHighCostWarning = false } = {}) {
         const reviews = this.getPlanReviews(plan);
-        const isHighCost = plan.cost > 25000;
+        const cost = Number(plan.cost) || 0;
+        const status = plan.status || 'pending';
+        const isHighCost = cost > 25000;
         const historyHtml = reviews.map(r => `
             <div style="font-size:12px; margin-bottom:10px; padding:8px; background:rgba(0,0,0,0.2); border-radius:8px;">
                 <b style="color:var(--primary)">${r.adminName} (${r.status}):</b> ${r.remarks}
@@ -394,10 +461,10 @@ const app = {
         `).join('');
 
         return `
-            <div style="font-weight:700; font-size:18px;">${plan.title}</div>
-            <div style="font-size:12px; opacity:0.6; margin: 6px 0;">${plan.requesterName} • ${plan.timestamp}</div>
-            <div style="color:var(--secondary); font-weight:700; margin: 5px 0;">Budget: PKR ${plan.cost.toLocaleString()}</div>
-            <span class="status-badge status-${plan.status}" style="display:inline-block; margin-bottom:12px;">${plan.status.toUpperCase()}</span>
+            <div style="font-weight:700; font-size:18px;">${plan.title || 'Untitled Plan'}</div>
+            <div style="font-size:12px; opacity:0.6; margin: 6px 0;">${plan.requesterName || 'Unknown'} • ${plan.timestamp || ''}</div>
+            <div style="color:var(--secondary); font-weight:700; margin: 5px 0;">Budget: PKR ${cost.toLocaleString()}</div>
+            <span class="status-badge status-${status}" style="display:inline-block; margin-bottom:12px;">${status.toUpperCase()}</span>
             ${showHighCostWarning && isHighCost ? '<div style="color:var(--danger); font-size:11px; font-weight:700; margin-bottom:10px;">⚠️ HIGH BUDGET: FINAL APPROVAL BY JANAB ONLY</div>' : ''}
             <div style="font-size:14px; line-height:1.5; opacity:0.9; margin-bottom:15px; white-space:pre-wrap;">${plan.description || 'No description provided.'}</div>
             <div style="border-top:1px solid var(--border); padding-top:15px;">
@@ -411,25 +478,28 @@ const app = {
         const plan = this.state.plans.find(p => p.id === planId);
         if (!plan) return;
 
+        this.state.viewingPlanId = planId;
         document.getElementById('view-plan-details').innerHTML = this.formatPlanDetailsHtml(plan);
         this.openModal('form-view-plan');
     },
 
     templatePlan(p) {
         const reviewCount = this.getPlanReviews(p).length;
+        const status = p.status || 'pending';
+        const cost = Number(p.cost) || 0;
 
         return `
             <div class="plan-card plan-card-clickable" onclick="app.showPlanModal(${p.id})">
                 <div class="plan-header">
                     <div>
-                        <div class="plan-title">${p.title}</div>
-                        <div style="font-size:12px; opacity:0.6">${p.requesterName} • ${p.timestamp}</div>
+                        <div class="plan-title">${p.title || 'Untitled Plan'}</div>
+                        <div style="font-size:12px; opacity:0.6">${p.requesterName || 'Unknown'} • ${p.timestamp || ''}</div>
                     </div>
-                    <div class="plan-cost">PKR ${p.cost.toLocaleString()}</div>
+                    <div class="plan-cost">PKR ${cost.toLocaleString()}</div>
                 </div>
                 <div class="plan-desc-preview">${p.description || 'No description provided.'}</div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="status-badge status-${p.status}">${p.status.toUpperCase()}</span>
+                    <span class="status-badge status-${status}">${status.toUpperCase()}</span>
                     ${reviewCount ? `<span style="font-size:11px; opacity:0.6;">${reviewCount} review${reviewCount > 1 ? 's' : ''}</span>` : ''}
                 </div>
                 <div class="plan-tap-hint">View details →</div>
@@ -567,29 +637,6 @@ const app = {
         }
 
         this.openModal('form-approve-plan');
-    },
-
-    togglePassword(inputId, btn) {
-        const input = document.getElementById(inputId);
-        if (!input) return;
-
-        const show = input.type === 'password';
-        input.type = show ? 'text' : 'password';
-        btn.innerHTML = show ? '<i data-lucide="eye-off"></i>' : '<i data-lucide="eye"></i>';
-        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-        lucide.createIcons();
-    },
-
-    resetPasswordToggle(inputId) {
-        const input = document.getElementById(inputId);
-        const field = input?.closest('.password-field');
-        const btn = field?.querySelector('.password-toggle');
-        if (!input || !btn) return;
-
-        input.type = 'password';
-        btn.innerHTML = '<i data-lucide="eye"></i>';
-        btn.setAttribute('aria-label', 'Show password');
-        lucide.createIcons();
     },
 
     showToast(msg) {

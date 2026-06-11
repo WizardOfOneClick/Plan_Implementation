@@ -136,38 +136,6 @@ input:focus, textarea:focus {
     box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
 }
 
-.password-field {
-    position: relative;
-}
-
-.password-field input {
-    padding-right: 48px;
-}
-
-.password-toggle {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-}
-
-.password-toggle:hover {
-    color: var(--text);
-}
-
-.password-toggle svg {
-    width: 18px;
-    height: 18px;
-}
-
 .btn {
     width: 100%;
     padding: 14px;
@@ -299,15 +267,33 @@ input:focus, textarea:focus {
     padding: 0;
 }
 
+.plans-section {
+    margin-bottom: 8px;
+}
+
 .plans-section-heading {
     font-size: 14px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--secondary);
-    margin: 28px 0 14px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border);
+    margin: 0 0 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.plans-section + .plans-section .plans-section-heading {
+    margin-top: 28px;
+}
+
+.heading-approved { color: var(--secondary); }
+.heading-pending { color: #f59e0b; }
+.heading-rejected { color: var(--danger); }
+
+.empty-state {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 16px 0;
 }
 
 .plan-header {
@@ -411,4 +397,139 @@ input:focus, textarea:focus {
 @keyframes slideUp {
     from { transform: translateY(100%); }
     to { transform: translateY(0); }
+}
+
+/* A4 Print */
+.plan-print-sheet {
+    display: none;
+}
+
+@media print {
+    @page {
+        size: A4;
+        margin: 15mm;
+    }
+
+    body * {
+        visibility: hidden;
+    }
+
+    .plan-print-sheet,
+    .plan-print-sheet * {
+        visibility: visible;
+    }
+
+    .plan-print-sheet {
+        display: block;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background: white;
+        color: #111;
+        font-family: 'Inter', Arial, sans-serif;
+    }
+
+    .print-page {
+        width: 180mm;
+        min-height: 257mm;
+        margin: 0 auto;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    .print-header {
+        border-bottom: 2px solid #111;
+        padding-bottom: 12px;
+        margin-bottom: 24px;
+    }
+
+    .print-header h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+        color: #111;
+    }
+
+    .print-header p {
+        margin: 0;
+        font-size: 12px;
+        color: #555;
+    }
+
+    .print-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 24px;
+        margin-bottom: 24px;
+        font-size: 13px;
+    }
+
+    .print-meta dt {
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 2px;
+    }
+
+    .print-meta dd {
+        margin: 0 0 12px;
+        color: #111;
+    }
+
+    .print-section {
+        margin-bottom: 20px;
+    }
+
+    .print-section h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #333;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 6px;
+        margin: 0 0 10px;
+    }
+
+    .print-section p {
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0;
+        white-space: pre-wrap;
+    }
+
+    .print-status {
+        display: inline-block;
+        padding: 4px 12px;
+        border: 1px solid #111;
+        font-weight: 700;
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+
+    .print-reviews table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    .print-reviews th,
+    .print-reviews td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .print-reviews th {
+        background: #f3f4f6;
+        font-weight: 700;
+    }
+
+    .print-footer {
+        margin-top: 32px;
+        padding-top: 12px;
+        border-top: 1px solid #ccc;
+        font-size: 11px;
+        color: #666;
+        text-align: center;
+    }
 }
