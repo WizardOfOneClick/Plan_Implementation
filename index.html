@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Plan Approval System</title>
+    <!-- SEO & PWA -->
+    <meta name="description" content="Premium Plan Approval System for Android.">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="manifest" href="manifest.json">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Notification Toast -->
+    <div id="notification-toast" class="notification-toast">
+        <span id="toast-message">Plan submitted successfully!</span>
+    </div>
+
+    <!-- Login View -->
+    <div id="view-login" class="view active">
+        <div class="login-card">
+            <h1>Welcome Back</h1>
+            <p>Sign in to manage your plans</p>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="login-username" placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="login-password" placeholder="••••••••">
+            </div>
+            <button class="btn btn-primary" onclick="app.login()">
+                Sign In
+            </button>
+            <div style="margin-top: 20px; text-align: center; font-size: 12px; color: var(--text-muted);">
+                <p>Demo accounts: <b>admin</b> (Manager), <b>user</b> (Staff)</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="app" style="display: none;">
+        <header style="padding: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <h2 id="view-title" style="font-size: 20px;">Dashboard</h2>
+            <div onclick="app.logout()" style="color: var(--danger); cursor: pointer;">
+                <i data-lucide="log-out"></i>
+            </div>
+        </header>
+
+        <div class="app-container">
+            <!-- Requester View -->
+            <div id="view-dashboard" class="view">
+                <div id="my-plans-list"></div>
+            </div>
+
+            <!-- Approvals View (Admin only) -->
+            <div id="view-approvals" class="view">
+                <div id="pending-approvals-list"></div>
+            </div>
+
+            <!-- Management View (Admin only) -->
+            <div id="view-management" class="view">
+                <div class="mg-section">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3>Staff Members</h3>
+                        <button class="btn btn-primary" style="width: auto; padding: 6px 12px; font-size: 13px;"
+                            onclick="app.showAddUserModal()">+ User</button>
+                    </div>
+                    <div id="users-list"></div>
+                </div>
+
+                <div class="mg-section" style="margin-top: 30px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3>Active Roles</h3>
+                        <button class="btn"
+                            style="width: auto; padding: 6px 12px; font-size: 13px; border: 1px solid var(--primary); color: var(--primary);"
+                            onclick="app.showAddRoleModal()">+ Role</button>
+                    </div>
+                    <div id="roles-list"></div>
+                </div>
+            </div>
+
+            <!-- Notifications View -->
+            <div id="view-notifications" class="view">
+                <div id="notifications-list"></div>
+            </div>
+        </div>
+
+        <!-- FAB for Users -->
+        <div id="fab-add-plan" class="fab" onclick="app.showAddPlanModal()">
+            <i data-lucide="plus"></i>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <div class="nav-item active" onclick="app.switchView('dashboard')" id="nav-dashboard">
+                <i data-lucide="layout-dashboard"></i>
+                <span>Plans</span>
+            </div>
+            <div class="nav-item" onclick="app.switchView('approvals')" id="nav-approvals" style="display: none;">
+                <i data-lucide="check-square"></i>
+                <span>Review</span>
+            </div>
+            <div class="nav-item" onclick="app.switchView('management')" id="nav-management" style="display: none;">
+                <i data-lucide="shield-check"></i>
+                <span>Manage</span>
+            </div>
+            <div class="nav-item" onclick="app.switchView('notifications')" id="nav-notifications">
+                <i data-lucide="bell"></i>
+                <span>Alerts</span>
+            </div>
+        </nav>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-container" class="modal-overlay" onclick="app.closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <!-- Form: Add Plan -->
+            <div id="form-add-plan" style="display: none;">
+                <h3 style="margin-bottom: 20px;">New Plan Application</h3>
+                <div class="form-group">
+                    <label>Plan Title</label>
+                    <input type="text" id="plan-title" placeholder="Project Name">
+                </div>
+                <div class="form-group">
+                    <label>Budget Estimate (PKR)</label>
+                    <input type="number" id="plan-cost" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label>Justification</label>
+                    <textarea id="plan-desc" rows="4" placeholder="Briefly describe the need..."></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="app.submitPlan()">Submit for Approval</button>
+            </div>
+
+            <!-- Form: Approve Plan -->
+            <div id="form-approve-plan" style="display: none;">
+                <h3 style="margin-bottom: 20px;">Review Application</h3>
+                <div id="review-plan-details"
+                    style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
+                </div>
+                <div class="form-group">
+                    <label>Manager Remarks</label>
+                    <textarea id="approval-remarks" rows="3" placeholder="Approval feedback..."></textarea>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-primary" style="flex: 2;"
+                        onclick="app.processApproval(true)">Approve</button>
+                    <button class="btn" style="flex: 1; border: 1px solid var(--danger); color: var(--danger);"
+                        onclick="app.processApproval(false)">Reject</button>
+                </div>
+            </div>
+
+            <!-- Form: Add User -->
+            <div id="form-add-user" style="display: none;">
+                <h3 style="margin-bottom: 20px;">New Personnel Account</h3>
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="new-user-name" placeholder="Name">
+                </div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="new-user-username" placeholder="Handle">
+                </div>
+                <div class="form-group">
+                    <label>Assign Role</label>
+                    <select id="new-user-role"></select>
+                </div>
+                <button class="btn btn-primary" onclick="app.addUser()">Create User</button>
+            </div>
+
+            <!-- Form: Add Role -->
+            <div id="form-add-role" style="display: none;">
+                <h3 style="margin-bottom: 20px;">Define New Role</h3>
+                <div class="form-group">
+                    <label>Role Name (e.g. Finance Head)</label>
+                    <input type="text" id="role-name" placeholder="Role Label">
+                </div>
+                <div class="form-group">
+                    <label>Base Permissions</label>
+                    <select id="role-type">
+                        <option value="user">User (Requester)</option>
+                        <option value="admin">Admin (Approver)</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="app.addRole()">Save Role</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "Plan Approval System",
+  "short_name": "PlanApp",
+  "description": "Premium Plan Approval System for Android.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1087/1087815.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
