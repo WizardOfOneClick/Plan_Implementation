@@ -1,7 +1,7 @@
 {
   "name": "Plan Approval System",
   "short_name": "PlanApp",
-  "description": "Premium Plan Approval System for Android.",
+  "description": "Plan Approval System .",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",

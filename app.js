@@ -3,25 +3,42 @@ const app = {
         users: JSON.parse(localStorage.getItem('users')) || [
             { id: 1, name: 'Main Manager', username: 'admin', roleId: 'r-admin', password: '123' },
             { id: 2, name: 'Standard User', username: 'user', roleId: 'r-user', password: '123' },
-            { id: 3, name: 'Janab', username: 'janab', roleId: 'r-admin', password: '123' }
+            { id: 3, name: 'Janab', username: 'janab', roleId: 'r-janab', password: '123' }
         ],
         roles: JSON.parse(localStorage.getItem('roles')) || [
             { id: 'r-admin', name: 'Manager', type: 'admin' },
+            { id: 'r-janab', name: 'Janab', type: 'janab' },
             { id: 'r-user', name: 'Staff', type: 'user' }
         ],
         plans: JSON.parse(localStorage.getItem('plans')) || [],
         notifications: JSON.parse(localStorage.getItem('notifications')) || [],
         currentUser: JSON.parse(localStorage.getItem('currentUser')) || null,
         activeView: 'dashboard',
-        selectedPlanId: null
+        selectedPlanId: null,
+        editingUserId: null
     },
 
     init() {
+        this.migrateJanabRole();
         if (this.state.currentUser) {
             this.showApp();
         }
         this.render();
         lucide.createIcons();
+    },
+
+    migrateJanabRole() {
+        let changed = false;
+        if (!this.state.roles.some(r => r.type === 'janab')) {
+            this.state.roles.push({ id: 'r-janab', name: 'Janab', type: 'janab' });
+            changed = true;
+        }
+        const janabUser = this.state.users.find(u => u.username === 'janab' || u.name === 'Janab');
+        if (janabUser && this.getRole(janabUser.roleId).type !== 'janab') {
+            janabUser.roleId = 'r-janab';
+            changed = true;
+        }
+        if (changed) this.save();
     },
 
     save() {
@@ -30,6 +47,71 @@ const app = {
         localStorage.setItem('plans', JSON.stringify(this.state.plans));
         localStorage.setItem('notifications', JSON.stringify(this.state.notifications));
         localStorage.setItem('currentUser', JSON.stringify(this.state.currentUser));
+        this.savePlansLog();
+    },
+
+    buildPlansLogText() {
+        const lines = [
+            '========================================',
+            'PLAN APPROVAL SYSTEM - VERIFICATION LOG',
+            `Last Updated: ${new Date().toLocaleString()}`,
+            `Total Plans: ${this.state.plans.length}`,
+            '========================================',
+            ''
+        ];
+
+        [...this.state.plans].sort((a, b) => b.id - a.id).forEach((plan, index) => {
+            lines.push(`--- PLAN ${index + 1} ---`);
+            lines.push(`ID: ${plan.id}`);
+            lines.push(`Title: ${plan.title}`);
+            lines.push(`Requester: ${plan.requesterName}`);
+            lines.push(`Budget: PKR ${plan.cost.toLocaleString()}`);
+            lines.push(`Status: ${(plan.status || 'pending').toUpperCase()}`);
+            lines.push(`Submitted: ${plan.timestamp}`);
+            lines.push(`Description: ${plan.description || 'N/A'}`);
+
+            const reviews = this.getPlanReviews(plan);
+            if (reviews.length) {
+                lines.push('Reviews:');
+                reviews.forEach(r => {
+                    lines.push(`  - ${r.adminName} (${r.status}): ${r.remarks} [${r.timestamp || ''}]`);
+                });
+            } else {
+                lines.push('Reviews: None');
+            }
+            lines.push('');
+        });
+
+        if (!this.state.plans.length) {
+            lines.push('No plans recorded yet.');
+        }
+
+        return lines.join('\n');
+    },
+
+    async savePlansLog() {
+        const text = this.buildPlansLogText();
+        try {
+            const res = await fetch('/api/plans/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+                body: text
+            });
+            return res.ok;
+        } catch (_) {
+            return false;
+        }
+    },
+
+    downloadPlansLog(text) {
+        const logText = text || this.buildPlansLogText();
+        const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'plans-log.txt';
+        link.click();
+        URL.revokeObjectURL(url);
     },
 
     getRole(roleId) {
@@ -38,7 +120,28 @@ const app = {
 
     isAdmin() {
         const role = this.getRole(this.state.currentUser?.roleId);
-        return role.type === 'admin' || this.state.currentUser?.name === 'Janab';
+        return role.type === 'admin' || role.type === 'janab';
+    },
+
+    isJanab() {
+        const role = this.getRole(this.state.currentUser?.roleId);
+        return role.type === 'janab' || this.state.currentUser?.name === 'Janab';
+    },
+
+    isJanabAccount(user) {
+        const role = this.getRole(user?.roleId);
+        return role.type === 'janab' || user?.name === 'Janab' || user?.username === 'janab';
+    },
+
+    isRegularAdmin() {
+        const role = this.getRole(this.state.currentUser?.roleId);
+        return role.type === 'admin';
+    },
+
+    canManageUserPassword(user) {
+        if (this.isRegularAdmin()) return true;
+        if (this.isJanab() && Number(user.id) === Number(this.state.currentUser?.id)) return true;
+        return false;
     },
 
     login() {
@@ -68,7 +171,7 @@ const app = {
         const admin = this.isAdmin();
         document.getElementById('nav-approvals').style.display = admin ? 'flex' : 'none';
         document.getElementById('nav-management').style.display = admin ? 'flex' : 'none';
-        document.getElementById('fab-add-plan').style.display = admin ? 'none' : 'flex';
+        document.getElementById('fab-add-plan').style.display = 'flex';
         this.switchView('dashboard');
     },
 
@@ -82,8 +185,8 @@ const app = {
 
         const role = this.getRole(this.state.currentUser.roleId);
         const titles = {
-            dashboard: role.type === 'admin' ? 'Managed Plans' : 'My Plans',
-            approvals: 'Review Queue',
+            dashboard: this.isAdmin() ? 'Managed Plans' : 'My Plans',
+            approvals: this.isJanab() ? 'Review & Override Queue' : 'Review Queue',
             management: 'Management Console',
             notifications: 'Notifications'
         };
@@ -128,34 +231,48 @@ const app = {
 
         if (!plan) return;
 
-        // Restriction Logic
-        const isHighCost = plan.cost > 25000;
-        const isJanab = this.state.currentUser.name === 'Janab';
-
-        if (isHighCost && !isJanab && statusType !== 'remark') {
-            return alert('This plan exceeds $25,000 and can only be final-approved or rejected by Janab. You may only add remarks.');
+        if (Number(plan.requesterId) === Number(this.state.currentUser.id)) {
+            return alert('You cannot approve or reject your own plan. It must be reviewed by Janab or another admin.');
         }
 
-        // Add Review
+        if (!plan.reviews) plan.reviews = [];
+
+        const isHighCost = plan.cost > 25000;
+        const isJanab = this.isJanab();
+        const previousStatus = plan.status;
+        const isOverride = isJanab && (previousStatus === 'approved' || previousStatus === 'rejected');
+
+        if (isHighCost && !isJanab && statusType !== 'remark') {
+            return alert('This plan exceeds PKR 25,000 and can only be final-approved or rejected by Janab. You may only add remarks.');
+        }
+
         plan.reviews.push({
             adminName: this.state.currentUser.name,
             remarks: remarks || '(No remarks provided)',
-            status: statusType,
+            status: isOverride ? `override-${statusType}` : statusType,
             timestamp: new Date().toLocaleString()
         });
 
-        // Finalize status if permitted
         if (statusType !== 'remark') {
             if (!isHighCost || isJanab) {
                 plan.status = statusType === 'approve' ? 'approved' : 'rejected';
-                this.addNotification(plan.requesterId, `Your plan "${plan.title}" was ${plan.status}.`);
+                const message = isOverride
+                    ? `Janab overrode the admin decision on "${plan.title}" — now ${plan.status} (was ${previousStatus}).`
+                    : `Your plan "${plan.title}" was ${plan.status}.`;
+                this.addNotification(plan.requesterId, message);
             }
         }
 
         this.save();
         this.closeModal();
         this.render();
-        this.showToast(statusType === 'remark' ? 'Remark added!' : `Plan ${plan.status}!`);
+        if (statusType === 'remark') {
+            this.showToast('Remark added!');
+        } else if (isOverride) {
+            this.showToast(`Admin decision overwritten — plan is now ${plan.status}.`);
+        } else {
+            this.showToast(`Plan ${plan.status}!`);
+        }
     },
 
     addUser() {
@@ -177,6 +294,35 @@ const app = {
         this.state.roles.push({ id: 'r-' + Date.now(), name, type });
         this.save(); this.closeModal(); this.render();
         this.showToast(`Role ${name} created!`);
+    },
+
+    showEditPasswordModal(userId) {
+        const user = this.state.users.find(u => u.id === userId);
+        if (!user || !this.canManageUserPassword(user)) {
+            return alert('You cannot modify this account\'s password.');
+        }
+
+        this.state.editingUserId = userId;
+        document.getElementById('edit-password-user-label').textContent = `Account: ${user.name} (@${user.username})`;
+        document.getElementById('edit-password-value').value = user.password || '';
+        this.resetPasswordToggle('edit-password-value');
+        this.openModal('form-edit-password');
+    },
+
+    savePassword() {
+        const user = this.state.users.find(u => u.id === this.state.editingUserId);
+        const password = document.getElementById('edit-password-value').value.trim();
+
+        if (!user || !this.canManageUserPassword(user)) {
+            return alert('You cannot modify this account\'s password.');
+        }
+        if (!password) return alert('Password cannot be empty.');
+
+        user.password = password;
+        this.save();
+        this.closeModal();
+        this.render();
+        this.showToast(`Password updated for ${user.name}.`);
     },
 
     addNotification(target, message) {
@@ -207,36 +353,86 @@ const app = {
     },
 
     renderPlans(isAdmin) {
-        const list = document.getElementById('my-plans-list');
-        if (!list) return;
-        const filtered = isAdmin ? this.state.plans : this.state.plans.filter(p => p.requesterId === this.state.currentUser.id);
-        list.innerHTML = filtered.length ? '' : '<p class="empty-state">No plans.</p>';
-        filtered.sort((a,b) => b.id - a.id).forEach(p => {
-            list.innerHTML += this.templatePlan(p);
-        });
+        const activeList = document.getElementById('active-plans-list');
+        const approvedList = document.getElementById('approved-plans-list');
+        const approvedSection = document.getElementById('approved-plans-section');
+        if (!activeList || !approvedList) return;
+
+        const filtered = isAdmin
+            ? this.state.plans
+            : this.state.plans.filter(p => Number(p.requesterId) === Number(this.state.currentUser.id));
+
+        const sortNewest = (a, b) => b.id - a.id;
+        const activePlans = filtered.filter(p => p.status !== 'approved').sort(sortNewest);
+        const approvedPlans = filtered.filter(p => p.status === 'approved').sort(sortNewest);
+
+        activeList.innerHTML = activePlans.length
+            ? activePlans.map(p => this.templatePlan(p)).join('')
+            : '<p class="empty-state">No active plans.</p>';
+
+        if (approvedPlans.length) {
+            approvedSection.style.display = 'block';
+            approvedList.innerHTML = approvedPlans.map(p => this.templatePlan(p)).join('');
+        } else {
+            approvedSection.style.display = 'none';
+            approvedList.innerHTML = '';
+        }
     },
 
-    templatePlan(p) {
-        const remarksHtml = p.reviews.map(r => `
-            <div style="font-size:11px; margin-top:5px; border-top:1px solid var(--border); padding-top:5px;">
-                <b>${r.adminName}:</b> ${r.remarks} <span style="font-size:9px; opacity:0.6">(${r.status})</span>
+    getPlanReviews(plan) {
+        return plan.reviews || [];
+    },
+
+    formatPlanDetailsHtml(plan, { showHighCostWarning = false } = {}) {
+        const reviews = this.getPlanReviews(plan);
+        const isHighCost = plan.cost > 25000;
+        const historyHtml = reviews.map(r => `
+            <div style="font-size:12px; margin-bottom:10px; padding:8px; background:rgba(0,0,0,0.2); border-radius:8px;">
+                <b style="color:var(--primary)">${r.adminName} (${r.status}):</b> ${r.remarks}
+                <div style="font-size:10px; opacity:0.6; margin-top:4px;">${r.timestamp || ''}</div>
             </div>
         `).join('');
 
         return `
-            <div class="plan-card">
+            <div style="font-weight:700; font-size:18px;">${plan.title}</div>
+            <div style="font-size:12px; opacity:0.6; margin: 6px 0;">${plan.requesterName} • ${plan.timestamp}</div>
+            <div style="color:var(--secondary); font-weight:700; margin: 5px 0;">Budget: PKR ${plan.cost.toLocaleString()}</div>
+            <span class="status-badge status-${plan.status}" style="display:inline-block; margin-bottom:12px;">${plan.status.toUpperCase()}</span>
+            ${showHighCostWarning && isHighCost ? '<div style="color:var(--danger); font-size:11px; font-weight:700; margin-bottom:10px;">⚠️ HIGH BUDGET: FINAL APPROVAL BY JANAB ONLY</div>' : ''}
+            <div style="font-size:14px; line-height:1.5; opacity:0.9; margin-bottom:15px; white-space:pre-wrap;">${plan.description || 'No description provided.'}</div>
+            <div style="border-top:1px solid var(--border); padding-top:15px;">
+                <label style="font-size:10px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:10px;">REVIEW HISTORY</label>
+                ${historyHtml || '<p style="font-size:12px; opacity:0.5;">No reviews yet.</p>'}
+            </div>
+        `;
+    },
+
+    showPlanModal(planId) {
+        const plan = this.state.plans.find(p => p.id === planId);
+        if (!plan) return;
+
+        document.getElementById('view-plan-details').innerHTML = this.formatPlanDetailsHtml(plan);
+        this.openModal('form-view-plan');
+    },
+
+    templatePlan(p) {
+        const reviewCount = this.getPlanReviews(p).length;
+
+        return `
+            <div class="plan-card plan-card-clickable" onclick="app.showPlanModal(${p.id})">
                 <div class="plan-header">
                     <div>
                         <div class="plan-title">${p.title}</div>
                         <div style="font-size:12px; opacity:0.6">${p.requesterName} • ${p.timestamp}</div>
                     </div>
-                    <div class="plan-cost">$${p.cost.toLocaleString()}</div>
+                    <div class="plan-cost">PKR ${p.cost.toLocaleString()}</div>
                 </div>
-                <div style="margin:10px 0; font-size:14px;">${p.description}</div>
+                <div class="plan-desc-preview">${p.description || 'No description provided.'}</div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="status-badge status-${p.status}">${p.status.toUpperCase()}</span>
+                    ${reviewCount ? `<span style="font-size:11px; opacity:0.6;">${reviewCount} review${reviewCount > 1 ? 's' : ''}</span>` : ''}
                 </div>
-                <div class="remarks-history">${remarksHtml}</div>
+                <div class="plan-tap-hint">View details →</div>
             </div>
         `;
     },
@@ -244,17 +440,35 @@ const app = {
     renderApprovals() {
         const list = document.getElementById('pending-approvals-list');
         if (!list) return;
-        const pending = this.state.plans.filter(p => p.status === 'pending');
-        list.innerHTML = pending.length ? '' : '<p class="empty-state">No reviews needed.</p>';
-        pending.forEach(p => {
+
+        const isJanab = this.isJanab();
+        const isOwnPlan = p => Number(p.requesterId) === Number(this.state.currentUser.id);
+
+        const reviewable = this.state.plans.filter(p => {
+            if (isOwnPlan(p)) return false;
+            if (p.status === 'pending') return true;
+            return isJanab && (p.status === 'approved' || p.status === 'rejected');
+        });
+
+        list.innerHTML = reviewable.length ? '' : '<p class="empty-state">No reviews needed.</p>';
+        reviewable.forEach(p => {
+            const isOverride = p.status === 'approved' || p.status === 'rejected';
+            const actionLabel = isOverride ? 'Override Admin Decision' : 'Review Application';
+            const statusNote = isOverride
+                ? `<span class="status-badge status-${p.status}" style="margin-top:8px; display:inline-block;">Currently ${p.status.toUpperCase()}</span>`
+                : '';
+
             list.innerHTML += `
-                <div class="plan-card" onclick="app.showReviewModal(${p.id})">
+                <div class="plan-card plan-card-clickable" onclick="app.showReviewModal(${p.id})">
                     <div class="plan-header">
                         <div class="plan-title">${p.title}</div>
-                        <div class="plan-cost">$${p.cost.toLocaleString()}</div>
+                        <div class="plan-cost">PKR ${p.cost.toLocaleString()}</div>
                     </div>
                     <div style="font-size:12px; color:var(--text-muted)">By ${p.requesterName}</div>
-                    <div style="margin-top:10px; color:var(--primary); font-size:12px; font-weight:600">Review Application →</div>
+                    ${statusNote}
+                    <div class="plan-desc-preview">${p.description || 'No description provided.'}</div>
+                    <button type="button" class="btn btn-primary" style="margin-top:12px; width:100%;"
+                        onclick="event.stopPropagation(); app.showReviewModal(${p.id})">${actionLabel}</button>
                 </div>
             `;
         });
@@ -264,18 +478,34 @@ const app = {
         const uList = document.getElementById('users-list');
         const rList = document.getElementById('roles-list');
         if (uList) {
-            uList.innerHTML = this.state.users.map(u => `
+            uList.innerHTML = this.state.users.map(u => {
+                const canManage = this.canManageUserPassword(u);
+                const passwordRow = canManage
+                    ? `<div class="user-password-row">
+                        <span>Password: <strong>${u.password || '123'}</strong></span>
+                        <button type="button" class="btn-link" onclick="app.showEditPasswordModal(${u.id})">Change</button>
+                       </div>`
+                    : '';
+
+                return `
                 <div class="plan-card user-card">
-                    <div><div style="font-weight:600">${u.name}</div><div style="font-size:12px; opacity:0.6">@${u.username}</div></div>
-                    <div class="status-badge" style="background:rgba(99,102,241,0.1); color:var(--primary)">${this.getRole(u.roleId).name}</div>
+                    <div class="user-card-main">
+                        <div>
+                            <div style="font-weight:600">${u.name}</div>
+                            <div style="font-size:12px; opacity:0.6">@${u.username}</div>
+                            ${passwordRow}
+                        </div>
+                        <div class="status-badge" style="background:rgba(99,102,241,0.1); color:var(--primary)">${this.getRole(u.roleId).name}</div>
+                    </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
         if (rList) {
             rList.innerHTML = this.state.roles.map(r => `
                 <div class="plan-card user-card">
                     <div style="font-weight:600">${r.name}</div>
-                    <div class="status-badge ${r.type === 'admin' ? 'status-approved' : 'status-pending'}">${r.type}</div>
+                    <div class="status-badge ${r.type === 'janab' ? 'status-approved' : r.type === 'admin' ? 'status-pending' : ''}">${r.type}</div>
                 </div>
             `).join('');
         }
@@ -294,48 +524,72 @@ const app = {
 
     openModal(formId) {
         document.getElementById('modal-container').classList.add('active');
-        ['form-add-plan', 'form-approve-plan', 'form-add-user', 'form-add-role'].forEach(id => document.getElementById(id).style.display = 'none');
+        ['form-add-plan', 'form-view-plan', 'form-approve-plan', 'form-edit-password', 'form-add-user', 'form-add-role'].forEach(id => {
+            document.getElementById(id).style.display = 'none';
+        });
         document.getElementById(formId).style.display = 'block';
     },
 
     closeModal() { document.getElementById('modal-container').classList.remove('active'); },
 
     showReviewModal(planId) {
-        this.state.selectedPlanId = planId;
         const plan = this.state.plans.find(p => p.id === planId);
-        const isHighCost = plan.cost > 25000;
-        const isJanab = this.state.currentUser.name === 'Janab';
+        if (!plan) return;
 
-        const historyHtml = plan.reviews.map(r => `
-            <div style="font-size:12px; margin-bottom:10px; padding:8px; background:rgba(0,0,0,0.2); border-radius:8px;">
-                <b style="color:var(--primary)">${r.adminName} (${r.status}):</b> ${r.remarks}
-            </div>
-        `).join('');
+        if (Number(plan.requesterId) === Number(this.state.currentUser.id)) {
+            return alert('You cannot review your own plan. It must be approved by Janab or another admin.');
+        }
+
+        this.state.selectedPlanId = planId;
+        const isHighCost = plan.cost > 25000;
+        const isJanab = this.isJanab();
+        const isOverride = isJanab && (plan.status === 'approved' || plan.status === 'rejected');
 
         document.getElementById('review-plan-details').innerHTML = `
-            <div style="font-weight:700; font-size:18px;">${plan.title}</div>
-            <div style="color:var(--secondary); font-weight:700; margin: 5px 0;">Cost: $${plan.cost.toLocaleString()}</div>
-            ${isHighCost ? '<div style="color:var(--danger); font-size:11px; font-weight:700; margin-bottom:10px;">⚠️ HIGH BUDGET: FINAL APPROVAL BY JANAB ONLY</div>' : ''}
-            <div style="font-size:14px; opacity:0.8; margin-bottom:15px;">${plan.description}</div>
-            <div style="border-top:1px solid var(--border); padding-top:15px;">
-                <label style="font-size:10px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:10px;">PREVIOUS REMARKS</label>
-                ${historyHtml || '<p style="font-size:12px; opacity:0.5;">No previous remarks.</p>'}
-            </div>
+            ${isOverride ? '<div style="color:var(--danger); font-size:12px; font-weight:700; margin-bottom:12px;">⚠️ OVERRIDE: This plan was already decided by an admin. Your decision will replace theirs.</div>' : ''}
+            ${this.formatPlanDetailsHtml(plan, { showHighCostWarning: true })}
         `;
+        document.getElementById('approval-remarks').value = '';
 
-        // Update buttons based on permissions
         const btnContainer = document.getElementById('approval-buttons');
+        if (!btnContainer) return;
+
         if (isHighCost && !isJanab) {
-            btnContainer.innerHTML = `<button class="btn btn-primary" onclick="app.processApproval('remark')">Add Remark Only</button>`;
+            btnContainer.innerHTML = `<button type="button" class="btn btn-primary" onclick="app.processApproval('remark')">Add Remark Only</button>`;
         } else {
+            const approveLabel = isOverride ? 'Override & Approve' : 'Approve';
+            const rejectLabel = isOverride ? 'Override & Reject' : 'Reject';
             btnContainer.innerHTML = `
-                <button class="btn btn-primary" style="flex:2;" onclick="app.processApproval('approve')">Approve Final</button>
-                <button class="btn" style="flex:1; border:1px solid var(--danger); color:var(--danger);" onclick="app.processApproval('reject')">Reject</button>
-                <button class="btn" style="flex:1; border:1px solid var(--border);" onclick="app.processApproval('remark')">Note</button>
+                <button type="button" class="btn btn-primary" style="flex:2;" onclick="app.processApproval('approve')">${approveLabel}</button>
+                <button type="button" class="btn" style="flex:1; border:1px solid var(--danger); color:var(--danger);" onclick="app.processApproval('reject')">${rejectLabel}</button>
+                <button type="button" class="btn" style="flex:1; border:1px solid var(--border);" onclick="app.processApproval('remark')">Note</button>
             `;
         }
 
         this.openModal('form-approve-plan');
+    },
+
+    togglePassword(inputId, btn) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.innerHTML = show ? '<i data-lucide="eye-off"></i>' : '<i data-lucide="eye"></i>';
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        lucide.createIcons();
+    },
+
+    resetPasswordToggle(inputId) {
+        const input = document.getElementById(inputId);
+        const field = input?.closest('.password-field');
+        const btn = field?.querySelector('.password-toggle');
+        if (!input || !btn) return;
+
+        input.type = 'password';
+        btn.innerHTML = '<i data-lucide="eye"></i>';
+        btn.setAttribute('aria-label', 'Show password');
+        lucide.createIcons();
     },
 
     showToast(msg) {

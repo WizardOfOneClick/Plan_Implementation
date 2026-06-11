@@ -1,0 +1,8 @@
+{
+  "name": "app-jamaat",
+  "version": "1.0.0",
+  "description": "Plan Approval System",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
